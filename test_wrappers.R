@@ -17,8 +17,9 @@ sis_generate <- function(T, y0, t0, ts,lambda, beta, gamma, mu, N) {
 
 #----------- SIS infer ----------------
 
-sis_infer <- function(T, y0, t0, ts,lambda, gamma, mu, N, y) {
-  standata <-  list (T  = T, y0 = y0, t0 = t0, ts = ts,lambda =lambda, gamma =gamma, mu =mu, N=N, y2_data=y)
+sis_infer <- function(T, y0, t0, ts,lambda, gamma, mu, N, y, beta_mu, beta_sigma, y_sigma) {
+  standata <-  list (T  = T, y0 = y0, t0 = t0, ts = ts,lambda =lambda, gamma =gamma, mu =mu, N=N, y2_data=y,
+                     beta_mu =beta_mu, beta_sigma =beta_sigma, y_sigma=y_sigma)
   model <- stan_model("stan_models/sis_infer.stan")
   out <- rstan::sampling(model, 
                          data = standata, 
@@ -68,13 +69,16 @@ lambda <- 0.0001; gamma <-0.01; mu <- 14/(1000*12);
 
 
 #times
-n_years <- 6;  n_t <- n_years*12; t	<- seq(0, n_t, by = 1); t0 = t[1]; t <- t[-1]; T <- length(t);
+n_years <- 6;  n_t <- n_years*12; t	<- seq(0, n_t, by = 1); t0 = t[1]; ts <- t[-1]; T <- length(ts);
 
 #initial conditions
 N <- 1000
 i0 <- 1; s0 <-  N-i0; y0 = c( S=s0, I=i0);
 
+# priors
+beta_mu <-0; beta_sigma <-1; y_sigma <-10
+
 # test sis_infer
-out <- sis_infer(T, y0, t0, ts,lambda, gamma, mu, N, y2_data)
+out <- sis_infer(T, y0, t0, ts,lambda, gamma, mu, N, y2_data, beta_mu, beta_sigma, y_sigma)
 
 

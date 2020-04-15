@@ -30,6 +30,9 @@ data {
   real mu;
   int N;
   vector[T] y2_data;
+  real beta_mu;
+  real beta_sigma;
+  real y_sigma;
 }
 
 transformed data {
@@ -61,9 +64,9 @@ transformed parameters{
 
 
 model {
-  beta ~ normal(0, 1);
+  beta ~ normal(beta_mu, beta_sigma);
   //col(matrix x, int n) - The n-th column of matrix x
-  y2_data ~ normal(col(to_matrix(y),2), 10);
+  y2_data ~ normal(col(to_matrix(y),2), y_sigma);
   
 }
 
