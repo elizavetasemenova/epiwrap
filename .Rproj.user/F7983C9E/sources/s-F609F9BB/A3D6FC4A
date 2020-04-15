@@ -1,0 +1,22 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1586970384233.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "0",
+    "id" : "A3D6FC4A",
+    "lastKnownWriteTime" : 1586971389,
+    "last_content_update" : 1586971389443,
+    "path" : "~/Box Sync/47_Jonah/epiwrap/test_wrappers.R",
+    "project_path" : "test_wrappers.R",
+    "properties" : {
+        "cursorPosition" : "52,0",
+        "scrollLine" : "36"
+    },
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_source"
+}

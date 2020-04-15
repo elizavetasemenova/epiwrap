@@ -1,0 +1,19 @@
+#----------- wrapper functions --------------------
+# sis_generate wrapper function
+sis_generate <- function(T, y0, t0, ts,lambda, beta, gamma, mu, N) {
+  standata <-  list (T  = T, y0 = y0, t0 = t0, ts = t,lambda =lambda, beta = beta, gamma =gamma, mu =mu, N=N)
+  out <- rstan::sampling(stanmodels$sis_generate, data = standata, ...)
+  return(out)
+}
+
+
+#----------- testing wrapper functions --------------------
+# call sis_generate wrapper function
+
+#times
+n_years <- 6;  n_t <- n_years*12; t	<- seq(0, n_t, by = 1); t0 = t[1]; t <- t[-1]; T <- length(t);
+
+#initial conditions
+i0 <- 1; s0 <-  N-i0; y0 = c( S=s0, I=i0);
+
+

@@ -1,0 +1,194 @@
+library(pzfx)
+library(tidyverse)
+library(drc)
+library("rstan")
+options(mc.cores = parallel::detectCores())
+rstan_options(auto_write = TRUE)
+
+d.AZ583 <- read_pzfx("../Data/AZ583 21.pzfx", table = 1) 
+
+colnames(d.AZ583)[1] <- "Time"
+
+d.AZ583 <- d.AZ583 %>%
+  pivot_longer(-Time, names_to = "variable", values_to = "RLU") %>%
+  separate(variable, into = c("Concentration", "Replicates"), sep = "_") %>%
+  mutate(Concentration = gsub(" ", "", Concentration), 
+         Conc = factor(Concentration, levels = unique(Concentration)))%>%
+  drop_na()
+
+ggplot(data = d.AZ583, aes (x = Time, y = RLU, group = Replicates, color = Replicates)) + 
+  facet_wrap( ~ Conc) + 
+  geom_line() + 
+  theme_bw()
+
+ggplot(data = filter(d.AZ583, Time == 0), aes(x= Conc, y = RLU, color = Replicates)) + 
+  geom_point() + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+d.AZ583.norm <- d.AZ583 %>%
+  group_by(Time, Replicates) %>%
+  mutate(RLU.norm = RLU / RLU[which(Conc == "DMSO")])
+
+ggplot(data = d.AZ583.norm, aes (x = Time, y = RLU.norm, group = Replicates, color = Replicates)) + 
+  facet_wrap( ~ Conc) + 
+  geom_line() + 
+  theme_bw()
+
+
+conc <- unique(d.AZ583.norm$Conc) 
+conc <- conc[(conc != "DMSO")]
+
+#====================================
+i <- conc[1]
+
+temp <- filter(d.AZ583.norm, Conc == i)
+
+mod <- drm(RLU.norm ~ Time, data = temp, fct = EXD.3(names = c("Plateau", "y0", "e")))
+plot(mod, log = "", xlab = "Time", pch = ".", main = paste("Concentration =", i))
+out <- t(data.frame(coef(mod)))
+colnames(out) <-  c("Plateau", "y0", "e") 
+(out <- data.frame(out) %>%
+  mutate(rate = 1/e,
+         Conc = i, 
+         Dmax = 1 - Plateau))
+  
+d <- temp[,c("Time", "RLU.norm",  "Replicates")] 
+
+ggplot(data = d, aes (x = Time, y = RLU.norm, group = Replicates, color = Replicates)) + 
+  geom_line() + 
+  theme_bw()
+
+# d <- d[-c(1:12),]
+# ggplot(data = d, aes (x = Time, y = RLU.norm, group = Replicates, color = Replicates)) + 
+#   geom_line() + 
+#   theme_bw()
+
+
+times <- unique(d$Time)
+times <- times[seq(1, length(times), 5)]
+d <- d[which(d$Time %in% times),]
+
+coord_ind <- rep(1: length(unique(d$Time)), each=3)
+
+d <- d %>% add_column(coord_ind)
+
+ggplot(data = d, aes (x = Time, y = RLU.norm, group = Replicates, color = Replicates)) + 
+  geom_line() + 
+  theme_bw()
+  
+x_long <- d$Time
+y <- d$RLU.norm
+#sd_global <- sd(y)
+#y_sc <- y / sd_global
+y_sc <- y
+x <- unique(x_long)
+N <- length(x)
+N_y <- length(y)
+
+N_pred <- 10
+x_pred <- seq(min(x), max(x), length.out=N_pred)
+
+stan_dat <- list(N_conc = N, 
+                 N_obs = N_y, 
+                 Unique_conc = x, 
+                 Value = y_sc, 
+                 Conc_index = coord_ind)  
+
+mod <- stan_model(file="stan_models/5_gp_no_theta.stan")
+
+niter = 2000
+max_treedepth = 15
+adapt_delta = 0.999
+
+m <- sampling(mod, 
+              data = stan_dat, 
+              iter = niter, chains = 3, cores=3,
+              control=list(max_treedepth=max_treedepth, adapt_delta = adapt_delta))
+
+print(m, pars = c("sigma_rep",  "sigma", "mu", "rho", "eta"),
+      probs = c(0.025, 0.25, 0.5, 0.75, 0.975),
+      digits_summary = 2, include = TRUE)
+
+stan_dens(m, pars = c("sigma_rep",  "sigma", "mu", "rho", "eta"))
+
+mu <- extract(m, pars="mu")[[1]]
+rho <- extract(m, pars="rho")[[1]]
+sigma <- extract(m, pars="sigma")[[1]]
+sigma_rep <- extract(m, pars="sigma_rep")[[1]]
+N_samp <- length(mu)
+eta <- rep(1, N_samp)
+y <- t(extract(m, pars="y")[[1]])
+
+SigmaMM <- CalcSigma(x, x, N_samp, eta, rho, sigma)
+SigmaNM <- CalcSigma(x_pred, x, N_samp, eta, rho, sigma)
+
+SigmaMM_inv <- array(data = NA, dim = c(N_samp, N, N))
+for (k in 1:N_samp){
+  SigmaMM_inv[k, , ] = solve(SigmaMM[k, , ])
+}
+
+N_pred <- length(x_pred)
+mean_response <- array(data=NA, dim = c(N_samp, N_pred))
+str(mean_response)
+for (k in 1:N_samp){
+  mean_response[k,] = mu[k] + ((SigmaNM[k,,] %*% SigmaMM_inv[k,,])  %*% (y[, k] - mu[k]))
+}
+#expected_mean_response = apply(mean_response, 2, mean)
+
+gp <- mean_response 
+#gp <- mean_response * sd_global
+gp_mean <- apply(gp, 2, mean)
+gp_95 <- apply(gp, 2, function(x) quantile(x, probs = c(0.025, 0.975)))
+gp.df = data.frame(x = c(x_pred), gp = gp_mean, gp_025 = gp_95[1,], gp_975 = gp_95[2,])
+gp.df = gp.df[order(gp.df$x),]
+
+
+plot(0, ylab = 'y', xlab = 'x', pch='', 
+     ylim= c(min(gp, y), max(gp, y)), xlim= c(min(x, x_pred), max(x, x_pred)))
+polygon(c(gp.df$x,rev(gp.df$x)),c(gp.df$gp_975,rev(gp.df$gp_025)),
+        col=alpha("skyblue",0.7), border=NA)
+
+col1 = rgb(0.8,0.4,0.1,0.7)
+col2 = rgb(0.2,0.4,0.1,0.7)
+
+for (i in seq(1, dim(gp)[1], 100)){
+  gp_i <- gp[i,]
+  gp.df.i = data.frame(x = c(x_pred), gp = gp_i)
+  gp.df.i = gp.df.i[order(gp.df.i$x),]
+  lines(gp.df.i, pch=19, col=alpha(col2, 0.1))
+}
+lines(gp.df$x, gp.df$gp, pch=19, col="coral4", lwd=2)
+
+points(x_long, y_sc , pch=19, col=alpha("brown", 0.2))
+
+#-------------------------------------
+# Fit GP
+#-------------------------------------
+CalcSigma <- function(x1, x2, N_s, eta_, rho_, sigma_){
+  N1 <- length(x1)
+  N2 <- length(x2)
+  Sigma <- array(data=0, dim = c(N_s, N1, N2))
+  sigma2 <- sigma_ * sigma_
+  
+  if (N1 == N2){
+    for (i in 1:N1)
+      Sigma[, i, i] = sigma2[i]
+  }
+  
+  for (i in 1:N_s){
+    for (j in 1:N1){
+      for (k in 1:N2){
+          Sigma[i, j, k] = Sigma[i, j, k] + eta_[i] ^ 2 * exp(-(x1[j] - x2[k])^ 2 / rho_[i]^ 2)
+      }
+    }
+  }
+  return(Sigma)
+}
+
+getmode <- function(v) {
+  uniqv <- unique(v)
+  uniqv[which.max(tabulate(match(v, uniqv)))]
+  
+  #-------------------------------------
+}
