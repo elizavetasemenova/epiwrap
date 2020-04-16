@@ -31,12 +31,15 @@ data {
    real gamma;
    real mu;
    int N;
+   real<lower=0> phi_inv;
 }
 
 transformed data {
            real x_r[4];
            int x_i[1];
            real theta[0];
+           real y[T,2];
+           real<lower=0> phi = 1. / phi_inv;
            
            x_i[1]=N;
            
@@ -44,33 +47,19 @@ transformed data {
            x_r[2]=gamma;
            x_r[3]=mu;
            x_r[4]=beta;
+           
+           y = integrate_ode_bdf(sis, y0, t0, ts, theta, x_r, x_i);
 }
 
 model {
 }
 
 generated quantities {
-    real y[T,2];
-    real n1;
-    real n2;
-
-    //y = integrate_ode(sis, y0, t0, ts, theta, x_r, x_i);
-    y = integrate_ode_bdf(sis, y0, t0, ts, theta, x_r, x_i);
-    
-   // add noise
-  for (t in 1:T) {
-     n1 = normal_rng(0, 10);
-     n2 = normal_rng(0, 10);
-     
-     if (y[t,1]+  n1>0)
-       y[t,1] =  y[t,1]+n1;
-     else 
-      y[t,1] = 0;
-
-     if (y[t,2]+  n2>0)
-       y[t,2] =  y[t,2]+n2;
-     else 
-      y[t,2] = 0;
-  }
+  real pred_cases[T];
+  pred_cases = neg_binomial_2_rng(col(to_matrix(y),2), phi);
 }
 
+
+
+    
+ 

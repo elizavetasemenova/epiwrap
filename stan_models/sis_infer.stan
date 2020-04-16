@@ -29,10 +29,11 @@ data {
   real gamma;
   real mu;
   int N;
-  vector[T] y2_data;
+  int cases[T];
   real beta_mu;
-  real beta_sigma;
-  real y_sigma;
+  real<lower=0> beta_sigma;
+  real<lower=0> a_phi;
+  real<lower=0> b_phi;
 }
 
 transformed data {
@@ -48,10 +49,12 @@ transformed data {
 
 parameters {
   real<lower=0> beta;
+  real<lower=0> phi_inv;
 }
 
 transformed parameters{
   real y[T,2];
+  real phi = 1. / phi_inv;
   {
     real theta[1];
     theta[1] = beta;
@@ -65,10 +68,15 @@ transformed parameters{
 
 model {
   beta ~ normal(beta_mu, beta_sigma);
+  phi_inv ~ cauchy(a_phi, b_phi);
   //col(matrix x, int n) - The n-th column of matrix x
-  y2_data ~ normal(col(to_matrix(y),2), y_sigma);
-  
+
+  cases ~ neg_binomial_2(col(to_matrix(y),2), phi);
 }
 
 generated quantities {
+  real pred_cases[T];
+  pred_cases = neg_binomial_2_rng(col(to_matrix(y),2), phi);
 }
+
+
